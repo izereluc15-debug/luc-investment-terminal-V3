@@ -1,0 +1,128 @@
+
+import pandas as pd
+from src.utils.helpers import safe_float
+
+MOAT = {
+    "NVDA": 10, "TSM": 10, "AVGO": 10, "MSFT": 10, "AMD": 8,
+    "AMZN": 10, "PLTR": 9, "RKLB": 7, "TEM": 7, "CRWV": 8, "QQQM": 10
+}
+
+MANAGEMENT = {
+    "NVDA": 5, "TSM": 5, "AVGO": 5, "MSFT": 5, "AMD": 5,
+    "AMZN": 5, "PLTR": 5, "RKLB": 5, "TEM": 4, "CRWV": 4, "QQQM": 5
+}
+
+MARKET_OPPORTUNITY = {
+    "NVDA": 5, "TSM": 5, "AVGO": 5, "MSFT": 5, "AMD": 5,
+    "AMZN": 5, "PLTR": 5, "RKLB": 5, "TEM": 5, "CRWV": 5, "QQQM": 5
+}
+
+AI_EXPOSURE = {
+    "NVDA": 10, "TSM": 9, "AVGO": 9, "MSFT": 9, "AMD": 9,
+    "AMZN": 8, "PLTR": 10, "RKLB": 4, "TEM": 8, "CRWV": 10, "QQQM": 7
+}
+
+def score_revenue_growth(x):
+    x = safe_float(x)
+    if pd.isna(x): return 8
+    if x >= 0.30: return 20
+    if x >= 0.20: return 17
+    if x >= 0.10: return 13
+    if x >= 0.00: return 8
+    return 2
+
+def score_earnings_growth(x, margin):
+    x = safe_float(x)
+    margin = safe_float(margin)
+    if pd.notna(x):
+        if x >= 0.30: return 20
+        if x >= 0.20: return 17
+        if x >= 0.10: return 13
+        if x >= 0.00: return 8
+        return 2
+    if pd.notna(margin):
+        if margin >= 0.30: return 18
+        if margin >= 0.20: return 15
+        if margin >= 0.10: return 12
+        if margin >= 0.00: return 7
+        return 2
+    return 8
+
+def score_fcf(x):
+    x = safe_float(x)
+    if pd.isna(x): return 6
+    if x > 10_000_000_000: return 15
+    if x > 1_000_000_000: return 12
+    if x > 0: return 9
+    return 3
+
+def score_valuation(pe, peg, ps):
+    pe = safe_float(pe)
+    peg = safe_float(peg)
+    ps = safe_float(ps)
+    if pd.notna(peg):
+        if peg < 1: return 15
+        if peg < 1.5: return 13
+        if peg < 2.5: return 9
+        return 5
+    if pd.notna(pe):
+        if pe < 20: return 13
+        if pe < 35: return 10
+        if pe < 60: return 7
+        return 4
+    if pd.notna(ps):
+        if ps < 5: return 10
+        if ps < 10: return 7
+        return 4
+    return 6
+
+def score_debt(debt, cash, debt_equity):
+    debt = safe_float(debt)
+    cash = safe_float(cash)
+    debt_equity = safe_float(debt_equity)
+    if pd.notna(debt) and pd.notna(cash):
+        if debt <= cash: return 10
+        if debt <= cash * 2: return 7
+        return 3
+    if pd.notna(debt_equity):
+        if debt_equity < 50: return 9
+        if debt_equity < 100: return 6
+        return 3
+    return 6
+
+def rating(score):
+    if score >= 95: return "🟢 Exceptional"
+    if score >= 90: return "🟢 Strong"
+    if score >= 80: return "🟢 Good"
+    if score >= 70: return "🟡 Hold"
+    if score >= 60: return "🟠 Watch"
+    return "🔴 High Risk"
+
+def add_scores(df):
+    rows = []
+    for _, r in df.iterrows():
+        t = r["Ticker"]
+        rev = score_revenue_growth(r.get("Revenue Growth"))
+        earn = score_earnings_growth(r.get("Earnings Growth"), r.get("Profit Margin"))
+        fcf = score_fcf(r.get("Free Cash Flow"))
+        val = score_valuation(r.get("Forward P/E"), r.get("PEG"), r.get("Price/Sales"))
+        debt = score_debt(r.get("Total Debt"), r.get("Cash"), r.get("Debt/Equity"))
+        moat = MOAT.get(t, 7)
+        management = MANAGEMENT.get(t, 4)
+        market = MARKET_OPPORTUNITY.get(t, 4)
+        total = min(rev + earn + fcf + val + debt + moat + management + market, 100)
+        rows.append({
+            "Ticker": t,
+            "Revenue Score /20": rev,
+            "Earnings Score /20": earn,
+            "FCF Score /15": fcf,
+            "Valuation Score /15": val,
+            "Debt Score /10": debt,
+            "Moat /10": moat,
+            "Management /5": management,
+            "Market Opportunity /5": market,
+            "AI Exposure /10": AI_EXPOSURE.get(t, 5),
+            "Total Score /100": total,
+            "Rating": rating(total)
+        })
+    return df.merge(pd.DataFrame(rows), on="Ticker", how="left")
